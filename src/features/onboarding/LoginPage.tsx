@@ -35,7 +35,11 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="Sign in" subtitle="Station owner or staff account">
+    <AuthLayout
+      title="Sign in"
+      subtitle="Station owner or staff account"
+      showStationAppLink={false}
+    >
       <form onSubmit={(e) => void onSubmit(e)}>
         <div className="field">
           <label htmlFor="li_e">Email</label>
