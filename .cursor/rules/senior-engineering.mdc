@@ -1,0 +1,35 @@
+---
+description: Senior engineering standards for AquaFlow (scope, quality, safety)
+alwaysApply: true
+---
+
+# Senior Engineering Standards
+
+## Scope and discipline
+
+- Solve only what was asked. No drive-by refactors or unrelated edits.
+- Read surrounding code before changing it. Match existing naming and patterns.
+- Prefer the smallest correct change over clever abstractions.
+- Behavior source of truth until parity: workspace root `aquaflow.html`.
+
+## Correctness
+
+- TypeScript is strict. No `any`, no `@ts-ignore` unless unavoidable with a short comment.
+- Handle errors explicitly — never empty `catch` blocks.
+- Domain math (balances, inventory) belongs in pure helpers under `src/domain/`; test those.
+
+## Security and privacy
+
+- Never commit secrets. Do not use `dangerouslySetInnerHTML` for user-entered fields.
+- Render user text as React children / text nodes only.
+- Treat restored JSON backups as untrusted; validate shape before applying.
+
+## Quality bar
+
+- Prefer accessible markup: labels on inputs, keyboard-usable modals, do not lock zoom.
+- Run `npm run build` after substantive edits; fix issues you introduce.
+- Leave code easier to read than you found it.
+
+## Communication
+
+- Explain what changed and why briefly. Do not create commits unless asked.

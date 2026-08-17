@@ -1,0 +1,21 @@
+---
+description: Follow AquaFlow phased roadmap; do not skip ahead
+alwaysApply: true
+---
+
+# Project phases
+
+Read `docs/ROADMAP.md`, `docs/CURRENT_PHASE.md`, and the active phase spec before planning work:
+
+- Phases 0–5: `docs/phases.md`
+- Phases 6–13: `docs/BACKEND_ROADMAP.md` and `docs/backend-phases.md`
+
+- Build only what fits the **current phase** scope and exit criteria.
+- Product direction: **offline-first multi-tenant SaaS** (stations = tenants).
+- Do not add auth/tenancy, backend, multi-device sync, billing, or PWA unless that phase is active.
+- **Phase 7** is Tenancy + Auth (`stations`, `station_id`, JWT with `stationId`) — implement in **`Aquaflow-api`**.
+- **Phase 12** is Stripe subscriptions — do not add billing earlier.
+- Phases **6–9** and most of **11–13** belong in sibling **`Aquaflow-api`** — never add Express/MySQL packages or an `api/` app inside this frontend repo (not a monorepo).
+- Phase **10** (and onboarding/billing UI in 11–12) may edit this React repo.
+- When finishing phase work, update checklists in `docs/CURRENT_PHASE.md` and the matching phase spec (`docs/phases.md` or `docs/backend-phases.md`).
+- Prefer task order in the active phase spec.

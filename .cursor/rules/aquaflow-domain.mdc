@@ -1,0 +1,22 @@
+---
+description: AquaFlow domain invariants (credit, inventory, deliveries)
+globs: src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# AquaFlow domain
+
+## Invariants
+
+- Customer balance = `sum(utang) − sum(payments)`. CLEAR when `<= 0`.
+- Completing a delivery: set status Completed; adjust `inventory.full` / `empty`; update `customer.gallonsOut`.
+- Payment modes on complete: `Cash` | `GCash` | `Utang` (Utang creates an utang row, unpaid).
+- Delivery statuses: `Pending` | `In Progress` | `Completed` | `Cancelled`.
+- Persist under versioned key `aquaFlow_v1`; migrate if schema changes.
+- Deleting a customer must also remove their deliveries, utang, and payments.
+- Dashboard KPIs must not show the same metric twice (no duplicate utang cards).
+
+## Locale
+
+- Money formatting: `en-PH` with currency from settings (default `₱`).
+- Keep bilingual empty-state copy from the HTML app unless an i18n phase says otherwise.

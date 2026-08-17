@@ -1,0 +1,38 @@
+---
+description: Vite SPA and React patterns for AquaFlow
+globs: src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# React & Vite (AquaFlow)
+
+Stack: Vite, React 19, TypeScript, React Router. Path alias `@/` → `src/` when configured.
+
+## Structure
+
+- `src/app/` — shell, router, icons
+- `src/features/` — one folder per page/domain screen
+- `src/domain/` — types and pure business helpers
+- `src/store/` — context + localStorage persistence
+- `src/components/` — shared UI primitives
+- `src/styles/` — design tokens and layout CSS
+
+## Components
+
+- Functional components only. Explicit prop types.
+- Keep pages thin; put mutations and formulas in domain/store.
+- Colocate feature-only UI under `src/features/<name>/`.
+
+```tsx
+// ❌ Untyped props
+function Card(props) { return <div>{props.title}</div> }
+
+// ✅ Explicit props
+type CardProps = { title: string };
+function Card({ title }: CardProps) { return <div>{title}</div> }
+```
+
+## Styling
+
+- Reuse CSS variables from `src/styles/tokens.css`. Do not invent a new palette.
+- Prefer existing class names (`btn`, `card`, `tbl`) over one-off inline styles.
