@@ -79,6 +79,19 @@ export function nowIsoInManila(now = new Date()): string {
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}.000+08:00`
 }
 
+/** Current clock time in Asia/Manila as `HH:mm`. */
+export function nowTimeInManila(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now)
+  const h = parts.find((p) => p.type === 'hour')?.value ?? '00'
+  const m = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  return `${h}:${m}`
+}
+
 export function formatSavedAt(date = new Date()): string {
   return date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
 }

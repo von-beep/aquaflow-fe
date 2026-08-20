@@ -4,6 +4,250 @@ import * as api from '@/api/client'
 import { useAquaFlow } from '@/store/AquaFlowContext'
 import { StationLocationPicker } from '@/features/settings/StationLocationPicker'
 
+const PAYMENT_PRESETS = ['GCash', 'Maya', 'BPI', 'BDO', 'UnionBank', 'GoTyme', 'ShopeePay', 'GrabPay']
+
+function absoluteQr(apiUrl: string, path: string): string {
+  if (path.startsWith('http')) return path
+  return `${apiUrl.replace(/\/$/, '')}${path}`
+}
+
+function PaymentMethodsCard({ apiUrl, token }: { apiUrl: string; token: string }) {
+  const [methods, setMethods] = useState<api.StationPaymentMethod[]>([])
+  const [customName, setCustomName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  async function refresh() {
+    const res = await api.listPaymentMethods(apiUrl, token)
+    setMethods(res.methods)
+  }
+
+  useEffect(() => {
+    void refresh().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : 'Failed to load payment methods')
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per token/url
+  }, [apiUrl, token])
+
+  async function addMethod(name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setAdding(true)
+    setError(null)
+    try {
+      await api.createPaymentMethod(apiUrl, token, trimmed)
+      setCustomName('')
+      await refresh()
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Could not add payment method',
+      )
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function removeMethod(m: api.StationPaymentMethod) {
+    if (!confirm(`Remove ${m.name} from checkout options?`)) return
+    setBusyId(m.id)
+    setError(null)
+    try {
+      await api.deletePaymentMethod(apiUrl, token, m.id)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove method')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function onQrFile(m: api.StationPaymentMethod, file: File | undefined) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Choose a PNG, JPEG, or WebP image')
+      return
+    }
+    if (file.size > 600_000) {
+      setError('Image is too large (max ~600KB)')
+      return
+    }
+    setBusyId(m.id)
+    setError(null)
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result)
+          else reject(new Error('Could not read image'))
+        }
+        reader.onerror = () => reject(new Error('Could not read image'))
+        reader.readAsDataURL(file)
+      })
+      await api.uploadPaymentMethodQr(apiUrl, token, m.id, dataUrl)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setBusyId(null)
+      const input = fileRefs.current[m.id]
+      if (input) input.value = ''
+    }
+  }
+
+  async function clearQr(m: api.StationPaymentMethod) {
+    if (!confirm(`Remove the ${m.name} QR from checkout?`)) return
+    setBusyId(m.id)
+    setError(null)
+    try {
+      await api.deletePaymentMethodQr(apiUrl, token, m.id)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove QR')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const existing = new Set(methods.map((m) => m.name.toLowerCase()))
+  const presetOptions = PAYMENT_PRESETS.filter((p) => !existing.has(p.toLowerCase()))
+
+  return (
+    <div className="card card-span-4">
+      <div className="card-h">
+        <h3>Payment methods</h3>
+      </div>
+      <div className="card-b">
+        <p style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 14 }}>
+          Add platforms (GCash, Maya, BPI, …) and upload each QR. Only methods with a QR
+          appear at consumer checkout (plus Cash on Delivery).
+        </p>
+
+        {methods.length > 0 ? (
+          <div className="pay-methods-grid">
+            {methods.map((m) => {
+              const busy = busyId === m.id
+              return (
+                <div key={m.id} className="pay-method-tile">
+                  <div className="pay-method-tile-h">
+                    <div className="pay-method-tile-name">{m.name}</div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={busy}
+                      onClick={() => void removeMethod(m)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  {m.qrUrl ? (
+                    <img
+                      src={absoluteQr(apiUrl, m.qrUrl)}
+                      alt={`${m.name} payment QR`}
+                      className="pay-method-tile-qr"
+                    />
+                  ) : (
+                    <p className="pay-method-tile-empty">
+                      No QR uploaded — hidden on checkout.
+                    </p>
+                  )}
+                  <input
+                    ref={(el) => {
+                      fileRefs.current[m.id] = el
+                    }}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    hidden
+                    onChange={(e) => void onQrFile(m, e.target.files?.[0])}
+                  />
+                  <div className="pay-method-tile-actions">
+                    <button
+                      type="button"
+                      className="btn btn-navy btn-sm"
+                      disabled={busy}
+                      onClick={() => fileRefs.current[m.id]?.click()}
+                    >
+                      {busy ? 'Working…' : m.qrUrl ? 'Replace QR' : 'Upload QR'}
+                    </button>
+                    {m.qrUrl ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() => void clearQr(m)}
+                      >
+                        Remove QR
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 14px' }}>
+            No payment platforms yet — add one below.
+          </p>
+        )}
+
+        <div className="pay-methods-add">
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--ink2)' }}>
+            Add payment platform
+          </div>
+          {presetOptions.length > 0 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {presetOptions.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={adding}
+                  onClick={() => void addMethod(name)}
+                >
+                  + {name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              void addMethod(customName)
+            }}
+            style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+          >
+            <input
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder="Custom name (e.g. Landbank)"
+              maxLength={32}
+              style={{ flex: '1 1 160px' }}
+            />
+            <button
+              type="submit"
+              className="btn btn-blue"
+              disabled={adding || !customName.trim()}
+            >
+              {adding ? 'Adding…' : 'Add'}
+            </button>
+          </form>
+        </div>
+
+        {error ? (
+          <p style={{ color: 'var(--red)', fontSize: 12, marginTop: 12, marginBottom: 0 }}>
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function TeamInvitesCard({ apiUrl, token }: { apiUrl: string; token: string }) {
   const [invites, setInvites] = useState<api.CreatedInvite['invite'][]>([])
   const [email, setEmail] = useState('')
@@ -349,13 +593,11 @@ export function SettingsPage() {
   const [lat, setLat] = useState<number | null>(state.settings.lat)
   const [lng, setLng] = useState<number | null>(state.settings.lng)
   const [currency, setCurrency] = useState(state.settings.currency)
-  const [qrPhUrl, setQrPhUrl] = useState(state.settings.qrPhUrl)
-  const [qrBusy, setQrBusy] = useState(false)
-  const [qrError, setQrError] = useState<string | null>(null)
+  const [openTime, setOpenTime] = useState(state.settings.openTime || '08:00')
+  const [closeTime, setCloseTime] = useState(state.settings.closeTime || '18:00')
   const fileRef = useRef<HTMLInputElement>(null)
-  const qrFileRef = useRef<HTMLInputElement>(null)
 
-  const settingsKey = `${state.settings.stationName}|${state.settings.phone}|${state.settings.address}|${state.settings.lat}|${state.settings.lng}|${state.settings.currency}|${state.settings.qrPhUrl}`
+  const settingsKey = `${state.settings.stationName}|${state.settings.phone}|${state.settings.address}|${state.settings.lat}|${state.settings.lng}|${state.settings.currency}|${state.settings.openTime}|${state.settings.closeTime}`
   const [syncedKey, setSyncedKey] = useState(settingsKey)
   if (settingsKey !== syncedKey) {
     setSyncedKey(settingsKey)
@@ -365,7 +607,8 @@ export function SettingsPage() {
     setLat(state.settings.lat)
     setLng(state.settings.lng)
     setCurrency(state.settings.currency)
-    setQrPhUrl(state.settings.qrPhUrl)
+    setOpenTime(state.settings.openTime || '08:00')
+    setCloseTime(state.settings.closeTime || '18:00')
   }
 
   async function onSave(e: FormEvent) {
@@ -378,83 +621,11 @@ export function SettingsPage() {
       lng,
       currency: currency.trim() || '₱',
       owner: state.settings.owner || '',
-      qrPhUrl,
+      openTime: openTime.trim(),
+      closeTime: closeTime.trim(),
+      gcashQrUrl: state.settings.gcashQrUrl,
+      mayaQrUrl: state.settings.mayaQrUrl,
     })
-  }
-
-  async function onQrPhFile(file: File | undefined) {
-    if (!file || !session.token) {
-      setQrError(session.token ? null : 'Sign in to upload QR Ph')
-      return
-    }
-    if (!file.type.startsWith('image/')) {
-      setQrError('Choose a PNG, JPEG, or WebP image')
-      return
-    }
-    if (file.size > 600_000) {
-      setQrError('Image is too large (max ~600KB)')
-      return
-    }
-    setQrBusy(true)
-    setQrError(null)
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => {
-          if (typeof reader.result === 'string') resolve(reader.result)
-          else reject(new Error('Could not read image'))
-        }
-        reader.onerror = () => reject(new Error('Could not read image'))
-        reader.readAsDataURL(file)
-      })
-      const res = await api.uploadStationQrPh(
-        session.apiBaseUrl,
-        session.token,
-        dataUrl,
-      )
-      const nextUrl = res.qrPhUrl ?? ''
-      setQrPhUrl(nextUrl)
-      await updateSettings({
-        ...state.settings,
-        stationName: stationName.trim() || state.settings.stationName,
-        phone: phone.trim(),
-        address: address.trim(),
-        lat,
-        lng,
-        currency: currency.trim() || '₱',
-        qrPhUrl: nextUrl,
-      })
-    } catch (err) {
-      setQrError(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setQrBusy(false)
-      if (qrFileRef.current) qrFileRef.current.value = ''
-    }
-  }
-
-  async function onClearQrPh() {
-    if (!session.token) return
-    if (!confirm('Remove the QR Ph image from checkout?')) return
-    setQrBusy(true)
-    setQrError(null)
-    try {
-      await api.deleteStationQrPh(session.apiBaseUrl, session.token)
-      setQrPhUrl('')
-      await updateSettings({
-        ...state.settings,
-        stationName: stationName.trim() || state.settings.stationName,
-        phone: phone.trim(),
-        address: address.trim(),
-        lat,
-        lng,
-        currency: currency.trim() || '₱',
-        qrPhUrl: '',
-      })
-    } catch (err) {
-      setQrError(err instanceof Error ? err.message : 'Could not remove QR Ph')
-    } finally {
-      setQrBusy(false)
-    }
   }
 
   async function onFileChange(file: File | undefined) {
@@ -507,74 +678,30 @@ export function SettingsPage() {
                       onChange={(e) => setCurrency(e.target.value)}
                     />
                   </div>
-                  <div className="field" style={{ marginBottom: 14 }}>
-                    <label htmlFor="s_qrph">QR Ph (GCash / Maya / InstaPay)</label>
-                    <p style={{ fontSize: 12, color: 'var(--ink2)', margin: '0 0 8px' }}>
-                      Upload your QR Ph code. Shoppers see it at checkout when they pay with
-                      GCash or Maya.
-                    </p>
-                    {qrPhUrl ? (
-                      <div style={{ marginBottom: 10 }}>
-                        <img
-                          src={
-                            qrPhUrl.startsWith('http')
-                              ? qrPhUrl
-                              : `${session.apiBaseUrl.replace(/\/$/, '')}${qrPhUrl}`
-                          }
-                          alt="Station QR Ph"
-                          style={{
-                            width: 160,
-                            height: 160,
-                            objectFit: 'contain',
-                            border: '1px solid var(--line)',
-                            borderRadius: 10,
-                            background: '#fff',
-                            padding: 8,
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>
-                        No QR Ph uploaded yet.
-                      </p>
-                    )}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <div className="settings-hours-row">
+                    <div className="field">
+                      <label htmlFor="s_open">Opens</label>
                       <input
-                        ref={qrFileRef}
-                        id="s_qrph"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        hidden
-                        onChange={(e) => void onQrPhFile(e.target.files?.[0])}
+                        id="s_open"
+                        type="time"
+                        value={openTime || '08:00'}
+                        onChange={(e) => setOpenTime(e.target.value)}
                       />
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        disabled={qrBusy || !session.token}
-                        onClick={() => qrFileRef.current?.click()}
-                      >
-                        {qrBusy ? 'Uploading…' : qrPhUrl ? 'Replace QR Ph' : 'Upload QR Ph'}
-                      </button>
-                      {qrPhUrl ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          disabled={qrBusy || !session.token}
-                          onClick={() => void onClearQrPh()}
-                        >
-                          Remove
-                        </button>
-                      ) : null}
                     </div>
-                    {qrError ? (
-                      <p style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{qrError}</p>
-                    ) : null}
-                    {!session.token ? (
-                      <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-                        Sign in to upload a QR Ph for the landing page checkout.
-                      </p>
-                    ) : null}
+                    <div className="field">
+                      <label htmlFor="s_close">Closes</label>
+                      <input
+                        id="s_close"
+                        type="time"
+                        value={closeTime || '18:00'}
+                        onChange={(e) => setCloseTime(e.target.value)}
+                      />
+                    </div>
                   </div>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px' }}>
+                    Shown on the landing page (Asia/Manila). Overnight hours are supported
+                    (e.g. 10:00 PM – 6:00 AM).
+                  </p>
                   <button type="submit" className="btn btn-blue">
                     Save Settings
                   </button>
@@ -654,6 +781,21 @@ export function SettingsPage() {
             </button>
           </div>
         </div>
+
+        {session.token ? (
+          <PaymentMethodsCard apiUrl={session.apiBaseUrl} token={session.token} />
+        ) : (
+          <div className="card card-span-4">
+            <div className="card-h">
+              <h3>Payment methods</h3>
+            </div>
+            <div className="card-b">
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
+                Sign in to add payment platforms and upload QR codes for checkout.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

@@ -3,7 +3,7 @@ import type { AquaFlowState, Delivery, PayMode } from '@/domain/types'
 
 export type CompleteDeliveryInput = {
   deliveryId: string
-  payment: 'Cash' | 'GCash' | 'Maya' | 'Utang'
+  payment: string
   fullOut: number
   emptyIn: number
   productName: string

@@ -9,7 +9,7 @@ export const DELIVERY_STATUSES = [
 
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number]
 
-export type PayMode = 'Cash' | 'GCash' | 'Maya' | ''
+export type PayMode = string
 
 export type Settings = {
   stationName: string
@@ -22,12 +22,18 @@ export type Settings = {
   /** Map pin longitude (WGS84), or null if unset. */
   lng: number | null
   currency: string
-  /** Public API path for QR Ph image, e.g. `/uploads/qrph/….png`. */
-  qrPhUrl: string
+  /** Daily open time `HH:mm` (Asia/Manila), or empty if unset. */
+  openTime: string
+  /** Daily close time `HH:mm` (Asia/Manila), or empty if unset. */
+  closeTime: string
+  /** Public API path for GCash QR, e.g. `/uploads/payment-qr/gcash/….png`. */
+  gcashQrUrl: string
+  /** Public API path for Maya QR. */
+  mayaQrUrl: string
 }
 
 /** Fill address/pin fields for older localStorage / backups. */
-export function normalizeSettings(raw: Partial<Settings> | null | undefined): Settings {
+export function normalizeSettings(raw: Partial<Settings> & { qrPhUrl?: string } | null | undefined): Settings {
   const latRaw = raw?.lat
   const lngRaw = raw?.lng
   const lat =
@@ -38,6 +44,10 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     lngRaw === null || lngRaw === undefined || (lngRaw as unknown) === ''
       ? null
       : Number(lngRaw)
+  const legacyQr =
+    typeof (raw as { qrPhUrl?: string } | null | undefined)?.qrPhUrl === 'string'
+      ? (raw as { qrPhUrl: string }).qrPhUrl
+      : ''
   return {
     stationName: String(raw?.stationName ?? ''),
     owner: String(raw?.owner ?? ''),
@@ -46,7 +56,13 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     lat: lat != null && Number.isFinite(lat) ? lat : null,
     lng: lng != null && Number.isFinite(lng) ? lng : null,
     currency: String(raw?.currency ?? '₱') || '₱',
-    qrPhUrl: typeof raw?.qrPhUrl === 'string' ? raw.qrPhUrl : '',
+    openTime: typeof raw?.openTime === 'string' ? raw.openTime : '',
+    closeTime: typeof raw?.closeTime === 'string' ? raw.closeTime : '',
+    gcashQrUrl:
+      typeof raw?.gcashQrUrl === 'string' && raw.gcashQrUrl
+        ? raw.gcashQrUrl
+        : legacyQr,
+    mayaQrUrl: typeof raw?.mayaQrUrl === 'string' ? raw.mayaQrUrl : '',
   }
 }
 

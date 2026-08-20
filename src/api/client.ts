@@ -56,6 +56,17 @@ export function login(
   })
 }
 
+/** Register a platform ops admin (requires server PLATFORM_REGISTER_SECRET). */
+export function registerPlatformAdmin(
+  baseUrl: string,
+  input: { secretCode: string; email: string; password: string },
+): Promise<AuthSession> {
+  return request<AuthSession>(baseUrl, '/auth/platform/register', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 /** Change password for the signed-in owner, staff, or rider account. */
 export function changePassword(
   baseUrl: string,
@@ -67,6 +78,22 @@ export function changePassword(
     token: authToken,
     body: JSON.stringify(input),
   })
+}
+
+export type AuthMeUser = {
+  id: string
+  email: string
+  role: string
+  stationId: string
+  riderId: string | null
+  isPlatformAdmin: boolean
+}
+
+export function getAuthMe(
+  baseUrl: string,
+  authToken: string,
+): Promise<{ user: AuthMeUser }> {
+  return request(baseUrl, '/auth/me', { method: 'GET', token: authToken })
 }
 
 export function register(
@@ -171,7 +198,10 @@ export type StationSettingsPayload = {
   lat: number | null
   lng: number | null
   currency: string
-  qrPhUrl?: string | null
+  openTime?: string | null
+  closeTime?: string | null
+  gcashQrUrl?: string | null
+  mayaQrUrl?: string | null
 }
 
 export function getSettings(
@@ -200,30 +230,112 @@ export function putSettings(
       lat: settings.lat,
       lng: settings.lng,
       currency: settings.currency,
+      openTime: settings.openTime ?? null,
+      closeTime: settings.closeTime ?? null,
     }),
   })
 }
 
-export function uploadStationQrPh(
+export type PaymentQrMethod = 'gcash' | 'maya'
+
+/** @deprecated Prefer payment-methods API */
+export function uploadStationPaymentQr(
   baseUrl: string,
   authToken: string,
+  method: PaymentQrMethod,
   imageDataUrl: string,
-): Promise<{ qrPhUrl: string | null }> {
-  return request(baseUrl, '/api/settings/qrph', {
+): Promise<{ method: PaymentQrMethod; qrUrl: string | null }> {
+  return request(baseUrl, `/api/settings/payment-qr/${method}`, {
     method: 'POST',
     token: authToken,
     body: JSON.stringify({ image: imageDataUrl }),
   })
 }
 
-export function deleteStationQrPh(
+/** @deprecated Prefer payment-methods API */
+export function deleteStationPaymentQr(
   baseUrl: string,
   authToken: string,
-): Promise<{ qrPhUrl: null }> {
-  return request(baseUrl, '/api/settings/qrph', {
+  method: PaymentQrMethod,
+): Promise<{ method: PaymentQrMethod; qrUrl: null }> {
+  return request(baseUrl, `/api/settings/payment-qr/${method}`, {
     method: 'DELETE',
     token: authToken,
   })
+}
+
+export type StationPaymentMethod = {
+  id: string
+  name: string
+  slug: string
+  qrUrl: string | null
+  sortOrder: number
+  hasQr: boolean
+}
+
+export function listPaymentMethods(
+  baseUrl: string,
+  authToken: string,
+): Promise<{ methods: StationPaymentMethod[] }> {
+  return request(baseUrl, '/api/settings/payment-methods', {
+    method: 'GET',
+    token: authToken,
+  })
+}
+
+export function createPaymentMethod(
+  baseUrl: string,
+  authToken: string,
+  name: string,
+): Promise<{ method: StationPaymentMethod }> {
+  return request(baseUrl, '/api/settings/payment-methods', {
+    method: 'POST',
+    token: authToken,
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deletePaymentMethod(
+  baseUrl: string,
+  authToken: string,
+  id: string,
+): Promise<{ ok: true }> {
+  return request(baseUrl, `/api/settings/payment-methods/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    token: authToken,
+  })
+}
+
+export function uploadPaymentMethodQr(
+  baseUrl: string,
+  authToken: string,
+  id: string,
+  imageDataUrl: string,
+): Promise<{ method: StationPaymentMethod }> {
+  return request(
+    baseUrl,
+    `/api/settings/payment-methods/${encodeURIComponent(id)}/qr`,
+    {
+      method: 'POST',
+      token: authToken,
+      body: JSON.stringify({ image: imageDataUrl }),
+    },
+  )
+}
+
+export function deletePaymentMethodQr(
+  baseUrl: string,
+  authToken: string,
+  id: string,
+): Promise<{ method: StationPaymentMethod }> {
+  return request(
+    baseUrl,
+    `/api/settings/payment-methods/${encodeURIComponent(id)}/qr`,
+    {
+      method: 'DELETE',
+      token: authToken,
+    },
+  )
 }
 
 export function listInvites(
@@ -317,6 +429,39 @@ export function listPlatformStations(
   return request(baseUrl, '/admin/stations', { method: 'GET', token: authToken })
 }
 
+export type PlatformStationDetail = {
+  station: PlatformStation
+  settings: {
+    stationName: string
+    owner: string
+    phone: string
+    address: string
+    lat: number | null
+    lng: number | null
+    currency: string
+  }
+  products: { id: string; name: string; price: number }[]
+  riders: {
+    id: string
+    name: string
+    phone: string
+    email: string | null
+    hasAccount: boolean
+  }[]
+  users: { id: string; email: string; role: string }[]
+}
+
+export function getPlatformStation(
+  baseUrl: string,
+  authToken: string,
+  stationId: string,
+): Promise<PlatformStationDetail> {
+  return request(baseUrl, `/admin/stations/${encodeURIComponent(stationId)}`, {
+    method: 'GET',
+    token: authToken,
+  })
+}
+
 export function createPlatformStation(
   baseUrl: string,
   authToken: string,
@@ -383,6 +528,13 @@ export function unsuspendStation(
   })
 }
 
+export type PublicPaymentMethod = {
+  id: string
+  name: string
+  slug: string
+  qrUrl: string | null
+}
+
 export type PublicStation = {
   id: string
   name: string
@@ -391,8 +543,14 @@ export type PublicStation = {
   address?: string
   lat?: number | null
   lng?: number | null
-  /** Relative API path, e.g. `/uploads/qrph/….png`. */
-  qrPhUrl?: string | null
+  /** Daily open `HH:mm` (Manila), if configured. */
+  openTime?: string | null
+  /** Daily close `HH:mm` (Manila), if configured. */
+  closeTime?: string | null
+  /** @deprecated Prefer paymentMethods from catalog products response */
+  gcashQrUrl?: string | null
+  /** @deprecated Prefer paymentMethods from catalog products response */
+  mayaQrUrl?: string | null
 }
 
 export type PublicProduct = {
@@ -414,6 +572,7 @@ export function getPublicStationProducts(
   station: PublicStation
   currency: string
   products: PublicProduct[]
+  paymentMethods: PublicPaymentMethod[]
 }> {
   return request(
     baseUrl,
@@ -436,8 +595,8 @@ export type PublicOrderInput = {
   phone: string
   address: string
   note?: string
-  /** Cash on Delivery → Cash; GCash/Maya require paymentProof screenshot */
-  payMode: 'Cash' | 'GCash' | 'Maya'
+  /** Cash on Delivery → Cash; other names must match a station method with QR */
+  payMode: string
   paymentProof?: string
   /** @deprecated Prefer paymentProof screenshot */
   paymentReference?: string
@@ -452,7 +611,7 @@ export type PublicOrderResult = {
   productName: string
   qty: number
   status: string
-  payMode?: 'Cash' | 'GCash' | 'Maya'
+  payMode?: string
   items?: {
     deliveryId: string
     productId: string
@@ -527,6 +686,18 @@ export function updateConsumerMe(
 ): Promise<{ consumer: ConsumerProfile }> {
   return request(baseUrl, '/auth/consumer/me', {
     method: 'PATCH',
+    token,
+    body: JSON.stringify(input),
+  })
+}
+
+export function changeConsumerPassword(
+  baseUrl: string,
+  token: string,
+  input: { currentPassword: string; newPassword: string },
+): Promise<{ ok: true }> {
+  return request(baseUrl, '/auth/consumer/change-password', {
+    method: 'POST',
     token,
     body: JSON.stringify(input),
   })
@@ -717,7 +888,7 @@ export function completeOrderDeliveries(
   authToken: string,
   orderId: string,
   input: {
-    payment: 'Cash' | 'GCash' | 'Maya' | 'Utang'
+    payment: string
     productNames?: Record<string, string>
   },
 ): Promise<{ orderId: string; deliveries: ApiDelivery[]; toast: string }> {
@@ -915,7 +1086,7 @@ export function completeRiderOrder(
   baseUrl: string,
   authToken: string,
   orderId: string,
-  payment: 'Cash' | 'GCash' | 'Maya' | 'Utang',
+  payment: string,
 ): Promise<{ orderId: string; toast: string; completed: number }> {
   return request(
     baseUrl,
@@ -1091,7 +1262,7 @@ export function completeDelivery(
   authToken: string,
   deliveryId: string,
   input: {
-    payment: 'Cash' | 'GCash' | 'Maya' | 'Utang'
+    payment: string
     fullOut: number
     emptyIn: number
     productName: string

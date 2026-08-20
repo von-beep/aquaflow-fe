@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatMoney } from '@/domain/money'
+import { nowTimeInManila } from '@/domain/dates'
+import { formatOpenHoursLabel, isOpenAt } from '@/domain/hours'
 import { ConsumerAuthModal } from '@/features/landing/ConsumerAuthModal'
 import { ConsumerOrdersPanel } from '@/features/landing/ConsumerOrdersPanel'
 import { ConsumerAddressesModal } from '@/features/landing/ConsumerAddressesModal'
 import { ConsumerProfileModal } from '@/features/landing/ConsumerProfileModal'
+import { ConsumerChangePasswordModal } from '@/features/landing/ConsumerChangePasswordModal'
 import { ConsumerChatModal } from '@/features/landing/ConsumerChatModal'
 import { CartCheckoutModal, type CartLine } from '@/features/landing/CartCheckoutModal'
 import { StationMapView } from '@/features/landing/StationMapView'
@@ -14,6 +17,12 @@ import {
   loadConsumerSession,
   saveConsumerSession,
 } from '@/consumer/session'
+import {
+  cartToLandingItems,
+  loadLandingBrowseState,
+  reconcileCartLines,
+  saveLandingBrowseState,
+} from '@/consumer/landingState'
 import {
   changedOrderIds,
   loadOrderStatusSeen,
@@ -61,10 +70,15 @@ function ProductThumb({ name }: { name: string }) {
 
 export function LandingPage() {
   const apiBaseUrl = configuredApiBaseUrl()
+  const browseRef = useRef(loadLandingBrowseState())
+  const prevStationRef = useRef<string | null>(null)
+  const cartReadyRef = useRef(false)
+
   const [stations, setStations] = useState<api.PublicStation[]>([])
-  const [stationId, setStationId] = useState('')
+  const [stationId, setStationId] = useState(() => browseRef.current.stationId)
   const [currency, setCurrency] = useState('₱')
   const [products, setProducts] = useState<api.PublicProduct[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<api.PublicPaymentMethod[]>([])
   const [stationsState, setStationsState] = useState<LoadState>('loading')
   const [productsState, setProductsState] = useState<LoadState>('ready')
   const [error, setError] = useState<string | null>(null)
@@ -81,6 +95,8 @@ export function LandingPage() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [authIntent, setAuthIntent] = useState<'none' | 'checkout' | 'chat'>('none')
   const [profileOpen, setProfileOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [addressesOpen, setAddressesOpen] = useState(false)
   const [addressesTick, setAddressesTick] = useState(0)
   const [ordersRefresh, setOrdersRefresh] = useState(0)
@@ -180,7 +196,12 @@ export function LandingPage() {
         if (cancelled) return
         setStations(res.stations)
         setStationsState('ready')
-        if (res.stations[0]) setStationId(res.stations[0].id)
+        const preferred = browseRef.current.stationId
+        const match = preferred
+          ? res.stations.find((s) => s.id === preferred || s.slug === preferred)
+          : undefined
+        const nextId = match?.id ?? res.stations[0]?.id ?? ''
+        setStationId(nextId)
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -195,28 +216,58 @@ export function LandingPage() {
   useEffect(() => {
     if (!stationId) {
       setProducts([])
+      setPaymentMethods([])
       setProductsState('ready')
       return
     }
+
+    const stationChanged =
+      prevStationRef.current !== null && prevStationRef.current !== stationId
+    prevStationRef.current = stationId
+
     let cancelled = false
     setProductsState('loading')
     setError(null)
-    setCart([])
-    setQtyByProduct({})
+
+    if (stationChanged) {
+      cartReadyRef.current = false
+      setCart([])
+      setQtyByProduct({})
+      const cleared = { stationId, cart: [] }
+      browseRef.current = cleared
+      saveLandingBrowseState(cleared)
+    }
+
     void api
       .getPublicStationProducts(apiBaseUrl, stationId)
       .then((res) => {
         if (cancelled) return
         setProducts(res.products)
+        setPaymentMethods(res.paymentMethods ?? [])
         setCurrency(res.currency || '₱')
         setStations((prev) =>
           prev.map((s) => (s.id === res.station.id ? { ...s, ...res.station } : s)),
         )
         setProductsState('ready')
+
+        // Restore or refresh cart against live catalog (prices / availability).
+        const saved =
+          !stationChanged && browseRef.current.stationId === stationId
+            ? browseRef.current.cart
+            : []
+        setCart((prev) => {
+          const source =
+            prev.length > 0
+              ? cartToLandingItems(prev)
+              : saved
+          return reconcileCartLines(res.products, source)
+        })
+        cartReadyRef.current = true
       })
       .catch((err: unknown) => {
         if (cancelled) return
         setProducts([])
+        setPaymentMethods([])
         setProductsState('error')
         setError(err instanceof Error ? err.message : 'Failed to load products')
       })
@@ -224,6 +275,16 @@ export function LandingPage() {
       cancelled = true
     }
   }, [apiBaseUrl, stationId])
+
+  useEffect(() => {
+    if (!stationId || !cartReadyRef.current) return
+    const next = {
+      stationId,
+      cart: cartToLandingItems(cart),
+    }
+    browseRef.current = next
+    saveLandingBrowseState(next)
+  }, [stationId, cart])
 
   useEffect(() => {
     setChatError(null)
@@ -352,6 +413,8 @@ export function LandingPage() {
   }, [apiBaseUrl, signedIn, consumerToken, chatOpen])
 
   const selected = stations.find((s) => s.id === stationId) ?? null
+  const hoursLabel = formatOpenHoursLabel(selected?.openTime, selected?.closeTime)
+  const openNow = isOpenAt(selected?.openTime, selected?.closeTime, nowTimeInManila())
   const cartSubtotal = useMemo(
     () => cart.reduce((sum, l) => sum + l.product.price * l.qty, 0),
     [cart],
@@ -375,11 +438,13 @@ export function LandingPage() {
 
   function goHome() {
     setNavTab('home')
+    setProfileMenuOpen(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function goOrders() {
     setNavTab('orders')
+    setProfileMenuOpen(false)
     if (!signedIn) {
       requireSignIn()
       return
@@ -390,6 +455,7 @@ export function LandingPage() {
 
   function goAddresses() {
     setNavTab('addresses')
+    setProfileMenuOpen(false)
     if (!signedIn) {
       requireSignIn()
       return
@@ -403,7 +469,19 @@ export function LandingPage() {
       requireSignIn()
       return
     }
+    setProfileMenuOpen((v) => !v)
+  }
+
+  function openMyProfile() {
+    setProfileMenuOpen(false)
+    setNavTab('profile')
     setProfileOpen(true)
+  }
+
+  function openChangePassword() {
+    setProfileMenuOpen(false)
+    setNavTab('profile')
+    setChangePasswordOpen(true)
   }
 
   return (
@@ -456,11 +534,13 @@ export function LandingPage() {
             Addresses
           </button>
           {signedIn ? (
-            <>
+            <div className="lp-profile">
               <button
                 type="button"
-                className={`lp-nav-link lp-nav-user${navTab === 'profile' ? ' active' : ''}`}
+                className={`lp-nav-link lp-nav-user${navTab === 'profile' || profileMenuOpen ? ' active' : ''}`}
                 onClick={goProfile}
+                aria-expanded={profileMenuOpen}
+                aria-haspopup="menu"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="8" r="3.5" />
@@ -468,10 +548,46 @@ export function LandingPage() {
                 </svg>
                 {consumerSession.consumer!.name.split(' ')[0]}
               </button>
-              <button type="button" className="lp-nav-link" onClick={signOutConsumer}>
-                Sign out
-              </button>
-            </>
+              {profileMenuOpen ? (
+                <>
+                  <button
+                    type="button"
+                    className="lp-profile-backdrop"
+                    aria-label="Close profile menu"
+                    onClick={() => setProfileMenuOpen(false)}
+                  />
+                  <div className="lp-profile-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={openMyProfile}
+                    >
+                      My profile
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={openChangePassword}
+                    >
+                      Change password
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setProfileMenuOpen(false)
+                        if (confirm('Sign out of your AquaFlow account?')) {
+                          signOutConsumer()
+                          setNavTab('home')
+                        }
+                      }}
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
           ) : (
             <>
               <button
@@ -643,7 +759,18 @@ export function LandingPage() {
                       <path strokeLinecap="round" d="M12 8v4l3 2" />
                     </svg>
                   </span>
-                  <span>Open: 8:00 AM – 6:00 PM</span>
+                  <span className="lp-hours">
+                    <span>
+                      {hoursLabel === 'Hours not set'
+                        ? 'Open hours not set'
+                        : `Open: ${hoursLabel}`}
+                    </span>
+                    {openNow === true ? (
+                      <span className="lp-hours-badge lp-hours-open">Open now</span>
+                    ) : openNow === false ? (
+                      <span className="lp-hours-badge lp-hours-closed">Closed</span>
+                    ) : null}
+                  </span>
                 </div>
                 <div className="lp-station-actions">
                   <button
@@ -805,13 +932,25 @@ export function LandingPage() {
       ) : null}
 
       {signedIn && consumerSession.token ? (
+        <ConsumerChangePasswordModal
+          open={changePasswordOpen}
+          apiBaseUrl={apiBaseUrl}
+          token={consumerSession.token}
+          onClose={() => {
+            setChangePasswordOpen(false)
+            setNavTab('home')
+          }}
+        />
+      ) : null}
+
+      {signedIn && consumerSession.token ? (
         <ConsumerAddressesModal
           open={addressesOpen}
           apiBaseUrl={apiBaseUrl}
           token={consumerSession.token}
           onClose={() => {
             setAddressesOpen(false)
-            setNavTab('home')
+            if (!checkoutOpen) setNavTab('home')
           }}
           onChanged={() => setAddressesTick((n) => n + 1)}
         />
@@ -860,7 +999,7 @@ export function LandingPage() {
         stationId={stationId}
         stationName={selected?.name ?? 'Station'}
         currency={currency}
-        qrPhUrl={selected?.qrPhUrl}
+        paymentMethods={paymentMethods}
         lines={cart}
         consumerToken={consumerSession.token ?? ''}
         prefillName={consumerSession.consumer?.name ?? ''}

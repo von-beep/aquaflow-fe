@@ -13,6 +13,8 @@ import {
 import { defaultRiderSessionApiUrl, type RiderSession } from '@/session/types'
 import { AuthLayout, useAuthForm } from '@/features/onboarding/AuthLayout'
 
+import { isOnlinePrepaid } from '@/domain/payMode'
+
 type PayChoice = 'Cash' | 'GCash' | 'Maya' | 'Utang'
 
 function absoluteUrl(apiBaseUrl: string, path: string | null | undefined): string | null {
@@ -211,10 +213,8 @@ function CompletePanel({
   onDone: () => void
   onCancel: () => void
 }) {
-  const prepaid = order.payMode === 'GCash' || order.payMode === 'Maya'
-  const [payment, setPayment] = useState<PayChoice>(
-    prepaid ? (order.payMode as 'GCash' | 'Maya') : 'Cash',
-  )
+  const prepaid = isOnlinePrepaid(order.payMode)
+  const [payment, setPayment] = useState<PayChoice>('Cash')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const proofUrl = absoluteUrl(session.apiBaseUrl, order.paymentProofUrl)
@@ -223,7 +223,7 @@ function CompletePanel({
     setBusy(true)
     setError(null)
     try {
-      const pay: PayChoice = prepaid ? (order.payMode as 'GCash' | 'Maya') : payment
+      const pay = prepaid ? order.payMode : payment
       await api.completeRiderOrder(session.apiBaseUrl, session.token, order.orderId, pay)
       onDone()
     } catch (err) {
@@ -619,7 +619,7 @@ function RiderHome({
         <div className="rider-list">
           {orders.map((o) => {
             const open = o.status !== 'Completed' && o.status !== 'Cancelled'
-            const prepaid = o.payMode === 'GCash' || o.payMode === 'Maya'
+            const prepaid = isOnlinePrepaid(o.payMode)
             const tone = statusTone(o.status)
             const itemCount = o.lines.reduce((n, l) => n + l.qty, 0)
             const menuOpen = menuOrderId === o.orderId

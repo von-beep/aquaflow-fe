@@ -3,6 +3,7 @@ import { Modal } from '@/components/Modal'
 import { productName } from '@/domain/lookups'
 import { formatMoney } from '@/domain/money'
 import { gcashReferenceFromNote } from '@/domain/gcashRef'
+import { isOnlinePrepaid } from '@/domain/payMode'
 import type { DeliveryGroup } from '@/domain/deliveryGroups'
 import { useAquaFlow } from '@/store/AquaFlowContext'
 
@@ -20,22 +21,15 @@ export function CompleteOrderModal({ group, onClose }: Props) {
   const [synced, setSynced] = useState(syncKey)
   if (syncKey !== synced && group) {
     setSynced(syncKey)
-    setPayment(
-      group.payMode === 'GCash' || group.payMode === 'Maya'
-        ? group.payMode
-        : 'Cash',
-    )
+    setPayment('Cash')
   }
 
   if (!group) return null
 
-  const prepaidOnline =
-    group.payMode === 'GCash' || group.payMode === 'Maya'
+  const prepaidOnline = isOnlinePrepaid(group.payMode)
   const legacyRef =
     group.payMode === 'GCash' ? gcashReferenceFromNote(group.note) : null
-  const effectivePayment: 'Cash' | 'GCash' | 'Maya' | 'Utang' = prepaidOnline
-    ? (group.payMode as 'GCash' | 'Maya')
-    : payment
+  const effectivePayment = prepaidOnline ? group.payMode : payment
 
   const customer = state.customers.find((c) => c.id === group.customerId)
   const currency = state.settings.currency || '₱'

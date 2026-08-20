@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { formatMoney } from '@/domain/money'
 import { ApiError } from '@/api/client'
 import * as api from '@/api/client'
 
-type PayChoice = 'Cash' | 'GCash' | 'Maya'
 const NEW_ADDRESS = '__new__'
 
 export type CartLine = {
@@ -18,8 +17,8 @@ type Props = {
   stationId: string
   stationName: string
   currency: string
-  /** Relative or absolute QR Ph image URL from the station. */
-  qrPhUrl?: string | null
+  /** Online methods that have a QR (from public catalog). */
+  paymentMethods?: api.PublicPaymentMethod[]
   lines: CartLine[]
   consumerToken: string
   prefillName?: string
@@ -31,13 +30,18 @@ type Props = {
   onClearCart?: () => void
 }
 
+function absoluteMedia(apiBaseUrl: string, path: string): string {
+  if (path.startsWith('http')) return path
+  return `${apiBaseUrl.replace(/\/$/, '')}${path}`
+}
+
 export function CartCheckoutModal({
   open,
   apiBaseUrl,
   stationId,
   stationName,
   currency,
-  qrPhUrl = null,
+  paymentMethods = [],
   lines,
   consumerToken,
   prefillName = '',
@@ -56,7 +60,7 @@ export function CartCheckoutModal({
   const [saveNewAddress, setSaveNewAddress] = useState(false)
   const [newLabel, setNewLabel] = useState('Home')
   const [note, setNote] = useState('')
-  const [payMode, setPayMode] = useState<PayChoice>('Cash')
+  const [payMode, setPayMode] = useState('Cash')
   const [paymentProof, setPaymentProof] = useState<string | null>(null)
   const [proofName, setProofName] = useState('')
   const proofInputRef = useRef<HTMLInputElement>(null)
@@ -66,6 +70,25 @@ export function CartCheckoutModal({
   const [addrLoading, setAddrLoading] = useState(false)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
+
+  const onlineMethods = useMemo(
+    () => paymentMethods.filter((m) => Boolean(m.qrUrl)),
+    [paymentMethods],
+  )
+  const methodNames = useMemo(
+    () => onlineMethods.map((m) => m.name).join('\0'),
+    [onlineMethods],
+  )
+  const selectedMethod = onlineMethods.find((m) => m.name === payMode) ?? null
+  const selectedQrUrl = selectedMethod?.qrUrl ?? null
+  const needsProof = payMode !== 'Cash'
+
+  useEffect(() => {
+    if (!open) return
+    if (payMode !== 'Cash' && !onlineMethods.some((m) => m.name === payMode)) {
+      setPayMode('Cash')
+    }
+  }, [open, payMode, methodNames, onlineMethods])
 
   const key = `${open}:${stationId}:${lines.map((l) => `${l.product.id}:${l.qty}`).join('|')}`
   const [synced, setSynced] = useState(key)
@@ -159,10 +182,7 @@ export function CartCheckoutModal({
           setError('Name, phone, and address are required')
           return false
         }
-        if (
-          (payMode === 'GCash' || payMode === 'Maya') &&
-          !paymentProof
-        ) {
+        if (needsProof && !paymentProof) {
           setError(`Upload a ${payMode} payment screenshot`)
           return false
         }
@@ -189,17 +209,13 @@ export function CartCheckoutModal({
               address: address.trim(),
               note: note.trim() || undefined,
               payMode,
-              paymentProof:
-                payMode === 'GCash' || payMode === 'Maya'
-                  ? paymentProof ?? undefined
-                  : undefined,
+              paymentProof: needsProof ? paymentProof ?? undefined : undefined,
             },
             consumerToken,
           )
-          const payLabel =
-            payMode === 'GCash' || payMode === 'Maya'
-              ? `${payMode} (screenshot attached)`
-              : 'Cash on Delivery'
+          const payLabel = needsProof
+            ? `${payMode} (screenshot attached)`
+            : 'Cash on Delivery'
           const itemCount = res.items?.length ?? lines.length
           setSuccess(
             `Order placed with ${stationName} (${itemCount} item${itemCount > 1 ? 's' : ''}). Total ${formatMoney(res.amount, currency)}. ${payLabel}.`,
@@ -362,38 +378,36 @@ export function CartCheckoutModal({
                 />
                 Cash on Delivery
               </label>
-              <label className="choice">
-                <input
-                  type="radio"
-                  name="co_pay"
-                  checked={payMode === 'GCash'}
-                  onChange={() => setPayMode('GCash')}
-                />
-                GCash
-              </label>
-              <label className="choice">
-                <input
-                  type="radio"
-                  name="co_pay"
-                  checked={payMode === 'Maya'}
-                  onChange={() => setPayMode('Maya')}
-                />
-                Maya
-              </label>
+              {onlineMethods.map((m) => (
+                <label className="choice" key={m.id}>
+                  <input
+                    type="radio"
+                    name="co_pay"
+                    checked={payMode === m.name}
+                    onChange={() => {
+                      setPayMode(m.name)
+                      setPaymentProof(null)
+                      setProofName('')
+                    }}
+                  />
+                  {m.name}
+                </label>
+              ))}
             </div>
+            {onlineMethods.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
+                Online payment is not set up for this station yet — use Cash on Delivery.
+              </p>
+            ) : null}
           </div>
-          {payMode === 'GCash' || payMode === 'Maya' ? (
+          {needsProof ? (
             <>
-              {qrPhUrl ? (
+              {selectedQrUrl ? (
                 <div className="field" style={{ textAlign: 'center' }}>
-                  <label>Scan QR Ph to pay ({payMode})</label>
+                  <label>Scan {payMode} QR to pay</label>
                   <img
-                    src={
-                      qrPhUrl.startsWith('http')
-                        ? qrPhUrl
-                        : `${apiBaseUrl.replace(/\/$/, '')}${qrPhUrl}`
-                    }
-                    alt={`${stationName} QR Ph`}
+                    src={absoluteMedia(apiBaseUrl, selectedQrUrl)}
+                    alt={`${stationName} ${payMode} QR`}
                     style={{
                       width: 200,
                       height: 200,
@@ -407,15 +421,10 @@ export function CartCheckoutModal({
                     }}
                   />
                   <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-                    Pay with {payMode} / QR Ph, then upload your payment screenshot.
+                    Pay with {payMode}, then upload your payment screenshot.
                   </p>
                 </div>
-              ) : (
-                <p style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>
-                  This station has not uploaded a QR Ph yet. Pay via {payMode}, then
-                  upload your payment screenshot below.
-                </p>
-              )}
+              ) : null}
               <div className="field">
                 <label htmlFor="co_proof">Payment screenshot</label>
                 <input

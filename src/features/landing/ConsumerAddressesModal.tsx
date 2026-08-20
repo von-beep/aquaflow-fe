@@ -80,7 +80,7 @@ export function ConsumerAddressesModal({
       open={open}
       onClose={onClose}
       cancelLabel="Close"
-      elevated
+      elevated="nested"
     >
       {loading ? (
         <p style={{ fontSize: 13, color: 'var(--ink2)' }}>Loading…</p>

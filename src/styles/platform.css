@@ -1,0 +1,230 @@
+/* /platform ops shell — light sidebar layout */
+
+.plat {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+  font-family: var(--font-ui);
+  color: var(--ink);
+}
+
+.plat-side {
+  width: 280px;
+  flex: none;
+  background: #e8eef8;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 18px 18px;
+  border-right: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  min-height: 100vh;
+}
+
+.plat-brand {
+  font-family: var(--font-d);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 22px;
+  line-height: 1.15;
+}
+
+.plat-brand span {
+  color: var(--blue);
+}
+
+.plat-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.plat-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--blue), var(--cyan));
+  color: #fff;
+  font-family: var(--font-d);
+  font-weight: 700;
+  font-size: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 4px;
+  letter-spacing: 0.02em;
+}
+
+.plat-email {
+  background: var(--blue);
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 8px;
+  word-break: break-word;
+}
+
+.plat-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink2);
+}
+
+.plat-meta-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.plat-meta-row svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.plat-meta-row strong {
+  display: block;
+  color: var(--ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.plat-meta-row span.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.plat-pw-btn {
+  width: 100%;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.plat-pw-btn:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.plat-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid rgba(12, 30, 51, 0.08);
+}
+
+.plat-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--ink2);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.plat-nav button svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.plat-nav button:hover {
+  background: rgba(14, 99, 196, 0.08);
+  color: var(--ink);
+}
+
+.plat-nav button.active {
+  background: rgba(14, 99, 196, 0.14);
+  color: var(--blue);
+}
+
+.plat-nav button.danger:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.plat-main {
+  flex: 1;
+  min-width: 0;
+  padding: 28px 28px 40px;
+}
+
+.plat-main h1 {
+  font-family: var(--font-d);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 18px;
+}
+
+.plat-flash {
+  font-size: 13px;
+  margin-bottom: 12px;
+  color: var(--ink2);
+}
+
+.plat-flash.error {
+  color: var(--red);
+}
+
+.plat-stations-empty {
+  padding: 28px 8px;
+  text-align: center;
+  color: var(--ink2);
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .plat {
+    flex-direction: column;
+  }
+
+  .plat-side {
+    width: 100%;
+    position: static;
+    min-height: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .plat-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+
+  .plat-nav button {
+    flex: 1 1 auto;
+    min-width: 120px;
+  }
+
+  .plat-main {
+    padding: 20px 16px 32px;
+  }
+}

@@ -11,8 +11,8 @@ type ModalProps = {
   hideFooter?: boolean
   hideHeader?: boolean
   modalClassName?: string
-  /** Stack above another open modal (same base overlay z-index otherwise). */
-  elevated?: boolean
+  /** Stack above another open modal. Use `nested` when opening over an already-elevated modal. */
+  elevated?: boolean | 'nested'
 }
 
 export function Modal({
@@ -41,9 +41,16 @@ export function Modal({
 
   if (!open) return null
 
+  const elevatedClass =
+    elevated === 'nested'
+      ? ' overlay-elevated-nested'
+      : elevated
+        ? ' overlay-elevated'
+        : ''
+
   return (
     <div
-      className={`overlay open${elevated ? ' overlay-elevated' : ''}`}
+      className={`overlay open${elevatedClass}`}
       role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()

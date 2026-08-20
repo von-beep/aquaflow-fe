@@ -25,7 +25,6 @@ import {
   type Delivery,
   type DeliveryStatus,
   type Payment,
-  type PayMode,
   type Product,
   type Rider,
   type Settings,
@@ -68,7 +67,7 @@ type AquaFlowContextValue = {
   ) => Promise<void>
   completeOrderRemote: (
     orderId: string,
-    input: { payment: 'Cash' | 'GCash' | 'Maya' | 'Utang' },
+    input: { payment: string },
   ) => Promise<boolean>
   removeDelivery: (deliveryId: string) => Promise<void>
   saveCustomer: (customer: Customer) => Promise<void>
@@ -84,7 +83,7 @@ type AquaFlowContextValue = {
   completeDeliveryRemote: (
     deliveryId: string,
     input: {
-      payment: 'Cash' | 'GCash' | 'Maya' | 'Utang'
+      payment: string
       fullOut: number
       emptyIn: number
       productName: string
@@ -233,9 +232,7 @@ function mapApiDelivery(d: api.ApiDelivery): Delivery {
     ? (d.status as DeliveryStatus)
     : 'Pending'
   const payMode =
-    d.payMode === 'Cash' || d.payMode === 'GCash' || d.payMode === 'Maya'
-      ? (d.payMode as PayMode)
-      : ''
+    typeof d.payMode === 'string' && d.payMode.trim() ? d.payMode.trim() : ''
   return {
     id: d.id,
     orderId: d.orderId || d.id,
@@ -400,6 +397,8 @@ export function AquaFlowProvider({ children }: { children: ReactNode }) {
           lat: settings.lat,
           lng: settings.lng,
           currency: settings.currency,
+          openTime: settings.openTime || null,
+          closeTime: settings.closeTime || null,
         })
         flash('Station info saved · live on landing page')
       } catch (err) {
@@ -1360,7 +1359,7 @@ export function AquaFlowProvider({ children }: { children: ReactNode }) {
     async (
       deliveryId: string,
       input: {
-        payment: 'Cash' | 'GCash' | 'Maya' | 'Utang'
+        payment: string
         fullOut: number
         emptyIn: number
         productName: string
@@ -1425,7 +1424,7 @@ export function AquaFlowProvider({ children }: { children: ReactNode }) {
   const completeOrderRemote = useCallback(
     async (
       orderId: string,
-      input: { payment: 'Cash' | 'GCash' | 'Maya' | 'Utang' },
+      input: { payment: string },
     ): Promise<boolean> => {
       const token = sessionRef.current.token
       const lines = stateRef.current.deliveries.filter(
@@ -1561,7 +1560,10 @@ export function AquaFlowProvider({ children }: { children: ReactNode }) {
         if (cancelled) return
         const settings = normalizeSettings({
           ...res.settings,
-          qrPhUrl: res.settings.qrPhUrl ?? '',
+          openTime: res.settings.openTime ?? '',
+          closeTime: res.settings.closeTime ?? '',
+          gcashQrUrl: res.settings.gcashQrUrl ?? '',
+          mayaQrUrl: res.settings.mayaQrUrl ?? '',
         })
         persistWorkspace({
           ...stateRef.current,
